@@ -1,0 +1,224 @@
+---
+title: "MATH 523 Project"
+author: "Jeremy Kim - 260620525"
+date: '2017-04-28'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse) 
+library(stargazer)
+library(xtable)
+library(MASS)
+
+file<-"biochemists.csv"
+data<-read.csv(file)
+
+art <- data$art
+fem <- data$fem
+mar <- data$mar
+kid5 <- data$kid5
+phd <- data$phd
+ment <- data$ment
+anypub <- data$anypub
+```
+
+## Objective 1
+
+```{r obj1}
+table(fem,mar,anypub)
+as.data.frame(table(fem,mar,anypub))
+fem.count<-as.data.frame(table(fem,mar,anypub))$fem
+mar.count<-as.data.frame(table(fem,mar,anypub))$mar
+anypub.count<-as.data.frame(table(fem,mar,anypub))$anypub
+count<-as.data.frame(table(fem,mar,anypub))$Freq
+```
+
+Fit saturated model first.
+
+```{r fit1}
+fit.fma<-glm(count~fem.count*mar.count*anypub.count,data=data,family="poisson")
+summary(fit.fma)
+```
+
+High p value for 3-way interaction. 
+
+```{r fit2}
+fit.fm.ma.fa<-update(fit.fma, ~.-fem.count:mar.count:anypub.count)
+summary(fit.fm.ma.fa)
+```
+
+Both mar:anypub and fem:anypub have high p value.
+
+```{r fit3}
+fit.fm.ma<-update(fit.fm.ma.fa, ~.- fem.count:anypub.count)
+summary(fit.fm.ma)
+
+fit.fm.fa<-update(fit.fm.ma.fa, ~.- mar.count:anypub.count)
+summary(fit.fm.ma)
+```
+
+mar:anypub has high p value.
+
+```{r fit4}
+fit.fm.a<-update(fit.fm.fa, ~. - fem.count:anypub.count)
+summary(fit.fm.a)
+
+fit.f.m.a<-update(fit.fm.a, ~. - fem.count:mar.count)
+summary(fit.f.m.a)
+```
+
+Compare models against saturated model using goodness of fit tests.
+
+```{r gof1}
+modellist = list(fit.f.m.a, fit.fm.a, fit.fm.fa, fit.fm.ma, fit.fm.ma.fa, fit.fma)
+
+data.frame(Model=c("f.m.a", "fm.a", "fm.fa", "fm.ma", "fm.ma.fa", "fma"), Dev=round(unlist(lapply(modellist, deviance)),4),
+           X2=round(unlist(lapply(modellist, function(x){ sum( residuals(x,type="pearson")^2)})),4),
+           AIC=round(unlist(lapply(modellist, AIC)),4),
+           BIC=round(unlist(lapply(modellist, AIC,k=log(915))),4),
+           Df = unlist(lapply(modellist,function(x){ x$df.residual})))
+```
+
+There is evidence against f.m.a and fm.ma. Model fm.a seems to perform the best.
+
+```{r anova1}
+anova(fit.fm.a, fit.fm.fa, fit.fm.ma.fa, fit.fma,test="LRT")
+```
+
+Model fm.a is the most suitable model. Thus, there are more biochemists who have published an article, are men, and are married.
+
+```{r summary1}
+summary(fit.fm.a)
+confint(fit.fm.a)
+exp(confint(fit.fm.a))
+```
+
+
+
+```{r plot1}
+par(mfrow=c(2,2))
+plot(fit.fm.a)
+```
+
+## Objective 2
+
+```{r obj2}
+par(mfrow=c(1,1))
+pairs(cbind(art, phd, ment))
+```
+
+art and phd seems to have no significant correlation, though phd and ment seem to do.
+
+```{r boxplot1}
+boxplot(art~fem)
+```
+
+Men tend to publish more articles.
+
+```{r boxplot2}
+boxplot(art~mar)
+```
+
+Married people tend to publish more articles. The assumption seems fair as married person tends to be older, thus more experienced and renown.
+
+```{r boxplot3}
+boxplot(art~kid5)
+```
+
+People with less kids tend to publish more articles. The assumption seems fair as more kids means less time to spend on research.
+
+Let's fit all covariates without interaction.
+
+```{r fit5}
+fit.f.m.k.p.mt<-glm(art ~ fem + mar + kid5 + phd + ment, family = poisson, data = data)
+summary(fit.f.m.k.p.mt)
+```
+
+Add interaction between phd and mentor, as they seems to have a significant correlation.
+
+```{r fit6}
+fit.f.m.k.pmt<-glm(art ~ fem + mar + kid5 + phd * ment, family = poisson, data = data)
+summary(fit.f.m.k.pmt)
+```
+
+Take out phd from the first model, as it has high p value.
+
+```{r fit7}
+fit.f.m.k.mt<-update(fit.f.m.k.p.mt, ~. - phd)
+summary(fit.f.m.k.mt)
+```
+
+Further reduce the model by taking out mar.
+
+```{r fit8}
+fit.f.k.mt<-update(fit.f.m.k.mt, ~. - mar)
+summary(fit.f.k.mt)
+```
+
+Add more interaction to model f.m.k.pmt.
+
+```{r}
+pairs(cbind(kid5, ment, fem))
+```
+
+kid5 and ment have some correlation. Let's add them.
+
+```{r fit9}
+fit.f.m.kmt.pmt<-update(fit.f.m.k.pmt, ~. + kid5:ment)
+summary(fit.f.m.kmt.pmt)
+```
+
+Compare models using goodness of fit tests.
+
+```{r gof2}
+modellist2 = list(fit.f.k.mt, fit.f.m.k.mt, fit.f.m.k.p.mt, fit.f.m.k.pmt, fit.f.m.kmt.pmt)
+data.frame(Model=c("f.k.mt", "f.m.k.mt", "f.m.k.p.mt", "f.m.k.pmt", "f.m.kmt.pmt"), Dev=round(unlist(lapply(modellist2, deviance)),4),
+      X2=round(unlist(lapply(modellist2, function(x){ sum( residuals(x,type="pearson")^2)})),4),
+      AIC=round(unlist(lapply(modellist2, AIC)),4),
+      BIC=round(unlist(lapply(modellist2, AIC,k=log(915))),4),
+      Df = unlist(lapply(modellist2,function(x){ x$df.residual})))
+```
+
+```{r anova2}
+anova(fit.f.k.mt, fit.f.m.k.mt, fit.f.m.k.p.mt, fit.f.m.k.pmt, fit.f.m.kmt.pmt,test="LRT")
+```
+
+Model f.m.kmt.pmt seems to be the best fit.
+
+```{r overdisp}
+X2 =sum(residuals(fit.f.m.kmt.pmt,type="pearson")^2)
+cat(c("X2 = ",round(X2,3)))
+cat(c("Rejection value = ",round(qchisq(0.95,914),3)))
+phi = X2/(907)
+cat(c("Phi=",round(phi,3)))
+```
+
+Phi is 1.8, let's see how negative binomial model performs.
+
+```{r overdisp2}
+fit.f.m.kmt.pmt.nb<-glm.nb(art ~ fem + mar + kid5 + phd + ment + phd:ment + kid5:ment, data = data)
+
+summary(fit.f.m.kmt.pmt.nb)
+fit.f.m.kmt.pmt.quasi<-glm(art ~ fem + mar + kid5 + phd + ment + phd:ment + kid5:ment,family=quasi(link="log",variance="mu"), data = data)
+summary(fit.f.m.kmt.pmt.quasi)
+fit.f.m.kmt.pmt.quasi2<-glm(art ~ fem + mar + kid5 + phd + ment + phd:ment + kid5:ment,family=quasi(link="log",variance="mu^2"), data = data)
+summary(fit.f.m.kmt.pmt.quasi2)
+```
+
+Neither negative binomial nor quasi-poisson performs well. Thus, the poisson model f.m.kmt.pmt is the most suitable model. 
+
+```{r summary2}
+summary(fit.f.m.kmt.pmt)
+confint(fit.f.m.kmt.pmt)
+exp(confint(fit.f.m.kmt.pmt))
+```
+
+The prestige of Ph.D. program and the number of publications by Ph.D. mentor seem to positively affect the number of articles published, though with a slightly negative interaction (less "synergy" effect as the phd and ment increase). Being single seem to negatively affect the number of articles, as singles tend to be young. Having more kids and being female also seem to negatively affect the number of articles.
+
+
+```{r plot2}
+par(mfrow=c(2,2))
+plot(fit.f.m.kmt.pmt)
+```
